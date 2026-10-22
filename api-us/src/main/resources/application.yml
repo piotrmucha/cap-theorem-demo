@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-us
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:db-us}:${DB_PORT:5432}/${DB_NAME:shop}
+    username: ${DB_USER:shop}
+    password: ${DB_PASSWORD:shop_pw}
+    hikari:
+      maximum-pool-size: 5
+
+app:
+  # Client-side statement timeout for POST /admin/sell. In CP mode, with the
+  # network between primary and standby partitioned, a sell will hang until
+  # this many seconds have passed, then return 503 instead of blocking
+  # forever.
+  sell-timeout-seconds: ${SELL_TIMEOUT_SECONDS:3}
+
+  # What POST /admin/reset sets the counter back to when no ?qty= is given.
+  # Pass ?qty=N to override it per request.
+  starting-stock: ${STARTING_STOCK:8}

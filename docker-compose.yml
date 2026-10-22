@@ -1,0 +1,154 @@
+name: cap-demo
+
+networks:
+  replication-net:
+    name: replication-net
+  us-net:
+    name: us-net
+  eu-net:
+    name: eu-net
+
+volumes:
+  db-us-data:
+  db-eu-data:
+
+services:
+  db-us:
+    image: postgres:16
+    container_name: db-us
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop_pw
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator_pw
+      REPLICATION_SLOT: db_eu_slot
+
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      - synchronous_standby_names=db_eu
+      - -c
+      - synchronous_commit=local
+      # - -c
+      # - synchronous_commit=remote_apply
+    restart: on-failure:3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+        reservations:
+          memory: 160M
+    volumes:
+      - db-us-data:/var/lib/postgresql/data
+      - ./postgres/primary/initdb:/docker-entrypoint-initdb.d:ro
+    networks:
+      - replication-net
+      - us-net
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  db-eu:
+    build: ./postgres/standby
+    container_name: db-eu
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      PRIMARY_HOST: db-us
+      PRIMARY_PORT: "5432"
+      REPLICATION_USER: replicator
+      REPLICATION_PASSWORD: replicator_pw
+      REPLICATION_SLOT: db_eu_slot
+      APPLICATION_NAME: db_eu
+    command: >
+      postgres
+      -c hot_standby=on
+    restart: on-failure:3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+        reservations:
+          memory: 160M
+    volumes:
+      - db-eu-data:/var/lib/postgresql/data
+    networks:
+      - replication-net
+      - eu-net
+    ports:
+      - "5434:5432"
+    depends_on:
+      db-us:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  api-us:
+    build: ./api-us
+    container_name: api-us
+    environment:
+      DB_HOST: db-us
+      DB_PORT: "5432"
+      DB_NAME: shop
+      DB_USER: shop
+      DB_PASSWORD: shop_pw
+      SELL_TIMEOUT_SECONDS: "3"
+      STARTING_STOCK: "8"
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=55 -XX:+UseSerialGC -Xss512k"
+    restart: on-failure:3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - us-net
+    ports:
+      - "8081:8080"
+    depends_on:
+      db-us:
+        condition: service_healthy
+
+  api-eu:
+    build: ./api-eu
+    container_name: api-eu
+    environment:
+      DB_HOST: db-eu
+      DB_PORT: "5432"
+      DB_NAME: shop
+      DB_USER: shop
+      DB_PASSWORD: shop_pw
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=55 -XX:+UseSerialGC -Xss512k"
+    restart: on-failure:3
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - eu-net
+    ports:
+      - "8082:8080"
+    depends_on:
+      db-eu:
+        condition: service_healthy

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Shop — US</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 480px;
+    margin: 60px auto;
+    text-align: center;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0; }
+  .region { color: #888; margin-top: 4px; }
+  .qty {
+    font-size: 5rem;
+    font-weight: 700;
+    margin: 32px 0 8px;
+  }
+  .qty.zero { color: #c0392b; }
+  button {
+    font-size: 1.1rem;
+    padding: 14px 28px;
+    margin: 6px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    cursor: pointer;
+  }
+  #sell {
+    background: #2e7d32;
+    color: white;
+    border: none;
+  }
+  #sell:active { transform: scale(0.98); }
+  #reset { background: transparent; }
+  .status { min-height: 1.4em; margin-top: 20px; font-size: 0.95rem; }
+  .status.error { color: #c0392b; font-weight: 600; }
+  .status.ok { color: #2e7d32; }
+</style>
+</head>
+<body>
+  <h1>US</h1>
+  <div class="region">Virginia · takes every write</div>
+
+  <div class="qty" id="qty">--</div>
+  <div>units in stock</div>
+
+  <div>
+    <button id="sell">Sell one unit</button>
+    <button id="reset">Reset stock</button>
+  </div>
+
+  <div class="status" id="status"></div>
+
+<script>
+  const qtyEl = document.getElementById('qty');
+  const statusEl = document.getElementById('status');
+  const sellBtn = document.getElementById('sell');
+  const resetBtn = document.getElementById('reset');
+
+  function renderQty(qty) {
+    qtyEl.textContent = qty;
+    qtyEl.classList.toggle('zero', qty === 0);
+  }
+
+  function setStatus(message, kind) {
+    statusEl.textContent = message || '';
+    statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  async function refreshStock() {
+    try {
+      const res = await fetch('/stock');
+      const body = await res.json();
+      renderQty(body.qty);
+    } catch (e) {
+      setStatus('Could not reach /stock: ' + e.message, 'error');
+    }
+  }
+
+  async function sell() {
+    sellBtn.disabled = true;
+    setStatus('Selling...');
+    const started = performance.now();
+    try {
+      const res = await fetch('/admin/sell', { method: 'POST' });
+      const elapsedMs = Math.round(performance.now() - started);
+      const body = await res.json();
+      if (res.status === 200) {
+        renderQty(body.qty);
+        setStatus(`Sold! (${elapsedMs} ms)`, 'ok');
+      } else if (res.status === 409) {
+        setStatus('Out of stock.', 'error');
+      } else if (res.status === 503) {
+        setStatus(`503 — timed out waiting for standby ack (${elapsedMs} ms). ${body.message || ''}`, 'error');
+      } else {
+        setStatus(`Unexpected response: ${res.status}`, 'error');
+      }
+    } catch (e) {
+      setStatus('Request failed: ' + e.message, 'error');
+    } finally {
+      sellBtn.disabled = false;
+    }
+  }
+
+  async function reset() {
+    resetBtn.disabled = true;
+    try {
+      const res = await fetch('/admin/reset', { method: 'POST' });
+      const body = await res.json();
+      renderQty(body.qty);
+      setStatus('Stock reset.', 'ok');
+    } catch (e) {
+      setStatus('Reset failed: ' + e.message, 'error');
+    } finally {
+      resetBtn.disabled = false;
+    }
+  }
+
+  sellBtn.addEventListener('click', sell);
+  resetBtn.addEventListener('click', reset);
+
+  refreshStock();
+  setInterval(refreshStock, 2000);
+</script>
+</body>
+</html>

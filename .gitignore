@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+
+# Gradle / Java build output
+build/
+.gradle/
+out/
+*.class
+
+# Video production: narration, animation sources, renders, shoot notes.
+# Nothing here is needed to run the demo.
+.production/
+experiments/
